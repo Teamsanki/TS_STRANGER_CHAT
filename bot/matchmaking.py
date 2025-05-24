@@ -19,8 +19,16 @@ async def start_chat(user_id, update, context):
         user_info = get_user_data(user_id)
         partner_info = get_user_data(partner_id)
 
-        intro_for_user = f"You are now connected to a stranger!\nName: *{partner_info['name']}*\nGender: *{partner_info['gender']}*"
-        intro_for_partner = f"You are now connected to a stranger!\nName: *{user_info['name']}*\nGender: *{user_info['gender']}*"
+        intro_for_user = (
+            f"You are now connected to a stranger!\n"
+            f"Name: *{partner_info['name']}*\n"
+            f"Gender: *{partner_info['gender']}*"
+        )
+        intro_for_partner = (
+            f"You are now connected to a stranger!\n"
+            f"Name: *{user_info['name']}*\n"
+            f"Gender: *{user_info['gender']}*"
+        )
 
         await context.bot.send_message(chat_id=partner_id, text=intro_for_partner, parse_mode="Markdown")
         await context.bot.send_message(chat_id=user_id, text=intro_for_user, parse_mode="Markdown")
@@ -46,54 +54,87 @@ async def forward_message(user_id, update, context):
         return
 
     partner_id = active_chats[user_id]
-    partner_info = get_user_data(partner_id)
+    sender_info = get_user_data(user_id)
 
-    partner_name = partner_info.get("name", "Unknown")
-    partner_gender = partner_info.get("gender", "Unknown")
-    prefix_text = f"Message from {partner_name}, Gender: {partner_gender}\n\n"
+    prefix = f"Message from *{sender_info['name']}* ({sender_info['gender']}):"
+    end_button = InlineKeyboardMarkup([
+        [InlineKeyboardButton("End Chat", callback_data="/end")]
+    ])
 
-    end_button = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("End Chat", callback_data="end_chat")]]
-    )
+    # Forward text
+    if update.message.text:
+        await context.bot.send_message(
+            chat_id=partner_id,
+            text=f"{prefix}\n{update.message.text}",
+            reply_markup=end_button,
+            parse_mode="Markdown"
+        )
 
-    msg = update.message
+    # Forward photo
+    elif update.message.photo:
+        await context.bot.send_photo(
+            chat_id=partner_id,
+            photo=update.message.photo[-1].file_id,
+            caption=prefix,
+            reply_markup=end_button,
+            parse_mode="Markdown"
+        )
 
-    async def send_with_prefix(method, **kwargs):
-        text = kwargs.get("caption") or kwargs.get("text") or ""
-        if "caption" in kwargs:
-            kwargs["caption"] = prefix_text + text
-        if "text" in kwargs:
-            kwargs["text"] = prefix_text + text
-        kwargs["reply_markup"] = end_button
-        await method(chat_id=partner_id, **{k: v for k, v in kwargs.items() if v is not None})
+    # Forward video
+    elif update.message.video:
+        await context.bot.send_video(
+            chat_id=partner_id,
+            video=update.message.video.file_id,
+            caption=prefix,
+            reply_markup=end_button,
+            parse_mode="Markdown"
+        )
 
-    if msg.text and msg.text.strip() != "":
-        await send_with_prefix(context.bot.send_message, text=msg.text)
+    # Forward voice
+    elif update.message.voice:
+        await context.bot.send_voice(
+            chat_id=partner_id,
+            voice=update.message.voice.file_id,
+            caption=prefix,
+            reply_markup=end_button,
+            parse_mode="Markdown"
+        )
 
-    elif msg.photo:
-        photo_file_id = msg.photo[-1].file_id
-        await send_with_prefix(context.bot.send_photo, photo=photo_file_id, caption=msg.caption)
+    # Forward sticker
+    elif update.message.sticker:
+        await context.bot.send_sticker(
+            chat_id=partner_id,
+            sticker=update.message.sticker.file_id,
+            reply_markup=end_button
+        )
 
-    elif msg.video:
-        await send_with_prefix(context.bot.send_video, video=msg.video.file_id, caption=msg.caption)
+    # Forward document
+    elif update.message.document:
+        await context.bot.send_document(
+            chat_id=partner_id,
+            document=update.message.document.file_id,
+            caption=prefix,
+            reply_markup=end_button,
+            parse_mode="Markdown"
+        )
 
-    elif msg.video_note:
-        # video_note does not support caption, so send text separately
-        await context.bot.send_video_note(chat_id=partner_id, video_note=msg.video_note.file_id)
-        await context.bot.send_message(chat_id=partner_id, text=prefix_text, reply_markup=end_button)
+    # Forward animation (GIF)
+    elif update.message.animation:
+        await context.bot.send_animation(
+            chat_id=partner_id,
+            animation=update.message.animation.file_id,
+            caption=prefix,
+            reply_markup=end_button,
+            parse_mode="Markdown"
+        )
 
-    elif msg.voice:
-        await send_with_prefix(context.bot.send_voice, voice=msg.voice.file_id, caption=msg.caption)
-
-    elif msg.sticker:
-        await context.bot.send_message(chat_id=partner_id, text=prefix_text, reply_markup=end_button)
-        await context.bot.send_sticker(chat_id=partner_id, sticker=msg.sticker.file_id)
-
-    elif msg.document:
-        await send_with_prefix(context.bot.send_document, document=msg.document.file_id, caption=msg.caption)
-
-    elif msg.animation:
-        await send_with_prefix(context.bot.send_animation, animation=msg.animation.file_id, caption=msg.caption)
+    # Forward video note
+    elif update.message.video_note:
+        await context.bot.send_video_note(
+            chat_id=partner_id,
+            video_note=update.message.video_note.file_id,
+            reply_markup=end_button
+        )
 
     else:
         await update.message.reply_text("Unsupported message type.")
