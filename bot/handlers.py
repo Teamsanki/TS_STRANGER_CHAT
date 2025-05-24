@@ -1,16 +1,11 @@
-from telegram import (
-    Update,
-    ReplyKeyboardMarkup,
-    ReplyKeyboardRemove,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-)
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     CommandHandler,
     MessageHandler,
-    filters,
-    ContextTypes,
+    CallbackQueryHandler,
     ConversationHandler,
+    ContextTypes,
+    filters,
 )
 from bot.matchmaking import start_chat, stop_chat, forward_message
 from bot.utils import is_registered, register_user
@@ -32,7 +27,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.message.reply_text("Please use /chat to start!")
+    if query.data == "start_chat":
+        await query.message.reply_text("Please use /chat to start!")
+    elif query.data == "end_chat":
+        await stop_chat(query.from_user.id, update, context)
 
 async def chat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -54,10 +52,7 @@ async def name_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = update.message.text
     gender = context.user_data["gender"]
     register_user(user_id, gender, name)
-    await update.message.reply_text(
-        f"✅ Registered successfully as *{name}*! Starting chat...",
-        parse_mode="Markdown"
-    )
+    await update.message.reply_text(f"✅ Registered successfully as *{name}*! Starting chat...", parse_mode="Markdown")
     await start_chat(user_id, update, context)
     return ConversationHandler.END
 
@@ -66,12 +61,10 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 async def end_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    await stop_chat(user_id, update, context)
+    await stop_chat(update.effective_user.id, update, context)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    await forward_message(user_id, update, context)
+    await forward_message(update.effective_user.id, update, context)
 
 def register_handlers(app):
     conv_handler = ConversationHandler(
@@ -83,19 +76,19 @@ def register_handlers(app):
         fallbacks=[CommandHandler("cancel", cancel)],
     )
 
-    media_filter = (
-        filters.TEXT |
-        filters.PHOTO |
-        filters.VIDEO |
-        filters.VOICE |
-        filters.Sticker.ALL |
-        filters.Document.ALL |
-        filters.Animation.ALL |
-        filters.VideoNote.ALL
-    )
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("end", end_command))
+    app.add_handler(CallbackQueryHandler(button_callback))
     app.add_handler(conv_handler)
-    app.add_handler(MessageHandler(filters.COMMAND, button_callback))  # handles button click
-    app.add_handler(MessageHandler(media_filter, handle_message))
+
+    app.add_handler(MessageHandler(
+        filters.TEXT |
+        filters.VIDEO |
+        filters.VOICE |
+        filters.STICKER |
+        filters.PHOTO |
+        filters.DOCUMENT |
+        filters.ANIMATION |
+        filters.VIDEO_NOTE,
+        handle_message
+    ))
