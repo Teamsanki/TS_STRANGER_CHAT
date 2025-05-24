@@ -12,7 +12,7 @@ from bot.utils import is_registered, register_user
 GENDER, NAME = range(2)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    photo_url = "https://telegra.ph/file/your-photo-id.jpg"
+    photo_url = "https://graph.org/file/2e37a57d083183ea24761-9cc38246fecc1af393.jpg"
     button = InlineKeyboardMarkup([
         [InlineKeyboardButton("Start Chatting", callback_data="start_chat")]
     ])
