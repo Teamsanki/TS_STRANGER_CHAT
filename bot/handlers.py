@@ -1,11 +1,16 @@
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    Update,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
 from telegram.ext import (
     CommandHandler,
     MessageHandler,
     filters,
     ContextTypes,
     ConversationHandler,
-    CallbackQueryHandler,
 )
 from bot.matchmaking import start_chat, stop_chat, forward_message
 from bot.utils import is_registered, register_user
@@ -27,21 +32,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-
-    if query.data == "start_chat":
-        user_id = query.from_user.id
-        if is_registered(user_id):
-            await start_chat(user_id, update, context)
-        else:
-            reply_markup = ReplyKeyboardMarkup([["Male", "Female"]], one_time_keyboard=True, resize_keyboard=True)
-            await query.message.reply_text("Select your gender:", reply_markup=reply_markup)
-            # Start a new conversation manually (if you want to handle conversation via buttons, more work needed)
-    elif query.data == "end_chat":
-        user_id = query.from_user.id
-        await stop_chat(user_id, update, context)
-        await query.message.edit_text("Chat ended.", reply_markup=None)
-    else:
-        await query.message.reply_text("Please use /chat to start!")
+    await query.message.reply_text("Please use /chat to start!")
 
 async def chat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -63,7 +54,10 @@ async def name_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = update.message.text
     gender = context.user_data["gender"]
     register_user(user_id, gender, name)
-    await update.message.reply_text(f"✅ Registered successfully as *{name}*! Starting chat...", parse_mode="Markdown")
+    await update.message.reply_text(
+        f"✅ Registered successfully as *{name}*! Starting chat...",
+        parse_mode="Markdown"
+    )
     await start_chat(user_id, update, context)
     return ConversationHandler.END
 
@@ -88,9 +82,20 @@ def register_handlers(app):
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
+
+    media_filter = (
+        filters.TEXT |
+        filters.PHOTO |
+        filters.VIDEO |
+        filters.VOICE |
+        filters.Sticker.ALL |
+        filters.Document.ALL |
+        filters.Animation.ALL |
+        filters.VideoNote.ALL
+    )
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("end", end_command))
     app.add_handler(conv_handler)
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO | filters.VOICE | filters.STICKER | filters.DOCUMENT | filters.ANIMATION | filters.VIDEO_NOTE, handle_message))
-    app.add_handler(CallbackQueryHandler(button_callback))
+    app.add_handler(MessageHandler(filters.COMMAND, button_callback))  # handles button click
+    app.add_handler(MessageHandler(media_filter, handle_message))
