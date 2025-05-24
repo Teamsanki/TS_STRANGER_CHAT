@@ -1,21 +1,22 @@
 from telegram import (
-    Update,
-    ReplyKeyboardMarkup,
-    ReplyKeyboardRemove,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup
+    Update, ReplyKeyboardMarkup, ReplyKeyboardRemove,
+    InlineKeyboardButton, InlineKeyboardMarkup
 )
 from telegram.ext import (
     CommandHandler,
     MessageHandler,
-    CallbackQueryHandler,
     filters,
-    ConversationHandler,
-    ContextTypes
+    CallbackQueryHandler,
+    ContextTypes,
+    ConversationHandler
 )
-from bot.matchmaking import start_chat, stop_chat, forward_message
+
+from bot.matchmaking import (
+    start_chat, stop_chat, forward_message, inline_callback_handler
+)
 from bot.utils import is_registered, register_user
 
+# States for registration
 GENDER, NAME = range(2)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -33,10 +34,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    if query.data == "start_chat":
-        await query.message.reply_text("Please use /chat to start chatting!")
-    elif query.data == "end_chat":
-        await stop_chat(query.from_user.id, context)
+    await query.message.reply_text("Please use /chat to start!")
 
 async def chat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -67,20 +65,15 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 async def end_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await stop_chat(update.effective_user.id, context)
+    user_id = update.effective_user.id
+    await stop_chat(user_id, update, context)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await forward_message(update.effective_user.id, update, context)
-
-from telegram.ext import (
-    CommandHandler,
-    MessageHandler,
-    CallbackQueryHandler,
-    ConversationHandler,
-    filters,
-)
+    user_id = update.effective_user.id
+    await forward_message(user_id, update, context)
 
 def register_handlers(app):
+    # Registration conversation
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("chat", chat_command)],
         states={
@@ -92,19 +85,7 @@ def register_handlers(app):
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("end", end_command))
-    app.add_handler(CallbackQueryHandler(button_callback))
     app.add_handler(conv_handler)
-
-    # Updated filters for PTB v20+
-    media_filter = (
-        filters.TEXT |
-        filters.PHOTO |
-        filters.VIDEO |
-        filters.VOICE |
-        filters.VIDEO_NOTE |
-        filters.Sticker.ALL |
-        filters.Document.ALL |
-        filters.Animation.ALL
-    )
-
-    app.add_handler(MessageHandler(media_filter & ~filters.COMMAND, handle_message))
+    app.add_handler(CallbackQueryHandler(button_callback, pattern="^start_chat$"))  # Inline Start Chat button
+    app.add_handler(CallbackQueryHandler(inline_callback_handler, pattern="^end_chat$"))  # Inline End Chat button
+    app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_message))
