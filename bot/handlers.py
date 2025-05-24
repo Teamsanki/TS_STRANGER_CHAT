@@ -1,11 +1,17 @@
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    Update,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup
+)
 from telegram.ext import (
     CommandHandler,
     MessageHandler,
     CallbackQueryHandler,
-    ConversationHandler,
-    ContextTypes,
     filters,
+    ConversationHandler,
+    ContextTypes
 )
 from bot.matchmaking import start_chat, stop_chat, forward_message
 from bot.utils import is_registered, register_user
@@ -28,9 +34,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     if query.data == "start_chat":
-        await query.message.reply_text("Please use /chat to start!")
+        await query.message.reply_text("Please use /chat to start chatting!")
     elif query.data == "end_chat":
-        await stop_chat(query.from_user.id, update, context)
+        await stop_chat(query.from_user.id, context)
 
 async def chat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -61,10 +67,18 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 async def end_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await stop_chat(update.effective_user.id, update, context)
+    await stop_chat(update.effective_user.id, context)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await forward_message(update.effective_user.id, update, context)
+
+from telegram.ext import (
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    ConversationHandler,
+    filters,
+)
 
 def register_handlers(app):
     conv_handler = ConversationHandler(
@@ -81,14 +95,16 @@ def register_handlers(app):
     app.add_handler(CallbackQueryHandler(button_callback))
     app.add_handler(conv_handler)
 
-    app.add_handler(MessageHandler(
+    # Updated filters for PTB v20+
+    media_filter = (
         filters.TEXT |
+        filters.PHOTO |
         filters.VIDEO |
         filters.VOICE |
-        filters.STICKER |
-        filters.PHOTO |
-        filters.DOCUMENT |
-        filters.ANIMATION |
-        filters.VIDEO_NOTE,
-        handle_message
-    ))
+        filters.VIDEO_NOTE |
+        filters.Sticker.ALL |
+        filters.Document.ALL |
+        filters.Animation.ALL
+    )
+
+    app.add_handler(MessageHandler(media_filter & ~filters.COMMAND, handle_message))
