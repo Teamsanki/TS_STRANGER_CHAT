@@ -1,10 +1,17 @@
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    Update,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
 from telegram.ext import (
     CommandHandler,
     MessageHandler,
-    filters,
+    CallbackQueryHandler,
     ContextTypes,
     ConversationHandler,
+    filters,
 )
 from bot.matchmaking import start_chat, stop_chat, forward_message
 from bot.utils import is_registered, register_user
@@ -13,20 +20,33 @@ GENDER, NAME = range(2)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     photo_url = "https://graph.org/file/2e37a57d083183ea24761-9cc38246fecc1af393.jpg"
-    button = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Start Chatting", callback_data="start_chat")]
-    ])
+    button = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("Start Chatting", callback_data="start_chat")]]
+    )
     await update.message.reply_photo(
         photo=photo_url,
         caption="**Welcome to TeleMingle**\nChat with strangers anonymously. Tap below to begin.",
         reply_markup=button,
-        parse_mode="Markdown"
+        parse_mode="Markdown",
     )
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.message.reply_text("Please use /chat to start!")
+    if query.data == "start_chat":
+        user_id = query.from_user.id
+        if is_registered(user_id):
+            await start_chat(user_id, update, context)
+        else:
+            reply_markup = ReplyKeyboardMarkup(
+                [["Male", "Female"]],
+                one_time_keyboard=True,
+                resize_keyboard=True,
+            )
+            await query.message.reply_text(
+                "Select your gender:", reply_markup=reply_markup
+            )
+            return GENDER
 
 async def chat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -34,13 +54,19 @@ async def chat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await start_chat(user_id, update, context)
         return ConversationHandler.END
 
-    reply_markup = ReplyKeyboardMarkup([["Male", "Female"]], one_time_keyboard=True, resize_keyboard=True)
-    await update.message.reply_text("Select your gender:", reply_markup=reply_markup)
+    reply_markup = ReplyKeyboardMarkup(
+        [["Male", "Female"]], one_time_keyboard=True, resize_keyboard=True
+    )
+    await update.message.reply_text(
+        "Select your gender:", reply_markup=reply_markup
+    )
     return GENDER
 
 async def gender_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["gender"] = update.message.text
-    await update.message.reply_text("Now, please enter your name:", reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text(
+        "Now, please enter your name:", reply_markup=ReplyKeyboardRemove()
+    )
     return NAME
 
 async def name_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -48,12 +74,17 @@ async def name_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = update.message.text
     gender = context.user_data["gender"]
     register_user(user_id, gender, name)
-    await update.message.reply_text(f"✅ Registered successfully as *{name}*! Starting chat...", parse_mode="Markdown")
+    await update.message.reply_text(
+        f"✅ Registered successfully as *{name}*! Starting chat...",
+        parse_mode="Markdown",
+    )
     await start_chat(user_id, update, context)
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Registration cancelled.", reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text(
+        "Registration cancelled.", reply_markup=ReplyKeyboardRemove()
+    )
     return ConversationHandler.END
 
 async def end_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -66,13 +97,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def register_handlers(app):
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("chat", chat_command)],
+        entry_points=[
+            CommandHandler("chat", chat_command),
+            CallbackQueryHandler(button_callback, pattern="^start_chat$"),
+        ],
         states={
             GENDER: [MessageHandler(filters.TEXT & ~filters.COMMAND, gender_handler)],
             NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, name_handler)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("end", end_command))
     app.add_handler(conv_handler)
