@@ -1,3 +1,4 @@
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from bot.utils import get_user_data
 
 waiting_users = []
@@ -45,31 +46,54 @@ async def forward_message(user_id, update, context):
         return
 
     partner_id = active_chats[user_id]
+    partner_info = get_user_data(partner_id)
 
-    # Forward text
-    if update.message.text:
-        await context.bot.send_message(chat_id=partner_id, text=update.message.text)
+    partner_name = partner_info.get("name", "Unknown")
+    partner_gender = partner_info.get("gender", "Unknown")
+    prefix_text = f"Message from {partner_name}, Gender: {partner_gender}\n\n"
 
-    # Forward video note
-    elif update.message.video_note:
-        await context.bot.send_video_note(
-            chat_id=partner_id,
-            video_note=update.message.video_note.file_id
-        )
+    end_button = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("End Chat", callback_data="end_chat")]]
+    )
 
-    # Forward voice message
-    elif update.message.voice:
-        await context.bot.send_voice(
-            chat_id=partner_id,
-            voice=update.message.voice.file_id
-        )
+    msg = update.message
 
-    # Forward sticker
-    elif update.message.sticker:
-        await context.bot.send_sticker(
-            chat_id=partner_id,
-            sticker=update.message.sticker.file_id
-        )
+    async def send_with_prefix(method, **kwargs):
+        text = kwargs.get("caption") or kwargs.get("text") or ""
+        if "caption" in kwargs:
+            kwargs["caption"] = prefix_text + text
+        if "text" in kwargs:
+            kwargs["text"] = prefix_text + text
+        kwargs["reply_markup"] = end_button
+        await method(chat_id=partner_id, **{k: v for k, v in kwargs.items() if v is not None})
+
+    if msg.text and msg.text.strip() != "":
+        await send_with_prefix(context.bot.send_message, text=msg.text)
+
+    elif msg.photo:
+        photo_file_id = msg.photo[-1].file_id
+        await send_with_prefix(context.bot.send_photo, photo=photo_file_id, caption=msg.caption)
+
+    elif msg.video:
+        await send_with_prefix(context.bot.send_video, video=msg.video.file_id, caption=msg.caption)
+
+    elif msg.video_note:
+        # video_note does not support caption, so send text separately
+        await context.bot.send_video_note(chat_id=partner_id, video_note=msg.video_note.file_id)
+        await context.bot.send_message(chat_id=partner_id, text=prefix_text, reply_markup=end_button)
+
+    elif msg.voice:
+        await send_with_prefix(context.bot.send_voice, voice=msg.voice.file_id, caption=msg.caption)
+
+    elif msg.sticker:
+        await context.bot.send_message(chat_id=partner_id, text=prefix_text, reply_markup=end_button)
+        await context.bot.send_sticker(chat_id=partner_id, sticker=msg.sticker.file_id)
+
+    elif msg.document:
+        await send_with_prefix(context.bot.send_document, document=msg.document.file_id, caption=msg.caption)
+
+    elif msg.animation:
+        await send_with_prefix(context.bot.send_animation, animation=msg.animation.file_id, caption=msg.caption)
 
     else:
         await update.message.reply_text("Unsupported message type.")
