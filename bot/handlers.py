@@ -1,15 +1,62 @@
-from telegram import Update
-from telegram.ext import CommandHandler, MessageHandler, filters, ContextTypes
-from bot.matchmaking import start_chat, stop_chat, forward_message, waiting_users, active_chats
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    CommandHandler,
+    MessageHandler,
+    filters,
+    ContextTypes,
+    ConversationHandler,
+)
+from bot.matchmaking import start_chat, stop_chat, forward_message
+from bot.utils import is_registered, register_user
+
+GENDER, NAME = range(2)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Welcome to TeleMingle!\nUse /megle to connect with a stranger.")
+    photo_url = "https://telegra.ph/file/your-photo-id.jpg"
+    button = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Start Chatting", callback_data="start_chat")]
+    ])
+    await update.message.reply_photo(
+        photo=photo_url,
+        caption="**Welcome to TeleMingle**\nChat with strangers anonymously. Tap below to begin.",
+        reply_markup=button,
+        parse_mode="Markdown"
+    )
 
-async def megler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.message.reply_text("Please use /chat to start!")
+
+async def chat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    await start_chat(user_id, update, context)
+    if is_registered(user_id):
+        await start_chat(user_id, update, context)
+        return ConversationHandler.END
 
-async def uhmegle(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    reply_markup = ReplyKeyboardMarkup([["Male", "Female"]], one_time_keyboard=True, resize_keyboard=True)
+    await update.message.reply_text("Select your gender:", reply_markup=reply_markup)
+    return GENDER
+
+async def gender_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["gender"] = update.message.text
+    await update.message.reply_text("Now, please enter your name:", reply_markup=ReplyKeyboardRemove())
+    return NAME
+
+async def name_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    name = update.message.text
+    gender = context.user_data["gender"]
+    register_user(user_id, gender, name)
+    await update.message.reply_text(f"✅ Registered successfully as *{name}*! Starting chat...", parse_mode="Markdown")
+    await start_chat(user_id, update, context)
+    return ConversationHandler.END
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Registration cancelled.", reply_markup=ReplyKeyboardRemove())
+    return ConversationHandler.END
+
+async def end_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     await stop_chat(user_id, update, context)
 
@@ -18,7 +65,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await forward_message(user_id, update, context)
 
 def register_handlers(app):
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("chat", chat_command)],
+        states={
+            GENDER: [MessageHandler(filters.TEXT & ~filters.COMMAND, gender_handler)],
+            NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, name_handler)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("megle", megler))
-    app.add_handler(CommandHandler("uhmegle", uhmegle))
+    app.add_handler(CommandHandler("end", end_command))
+    app.add_handler(conv_handler)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
