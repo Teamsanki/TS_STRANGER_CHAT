@@ -1,46 +1,56 @@
+# bot/utils.py
+
 import os
-from pymongo import MongoClient
 import random
 import string
+from pymongo import MongoClient
 
 client = MongoClient(os.environ.get("MONGO_URI"))
-db = client["tsbots"]  # Apna DB name yahan likho
-
+db = client["ts_stranger_chat"]  # change to your DB name
 users = db.users
-usernames = db.usernames  # usernames collection for bot-generated usernames
+active_chats = db.active_chats
 
-def is_registered(user_id: int) -> bool:
-    return users.find_one({"user_id": user_id}) is not None
+def get_user_data(user_id):
+    return users.find_one({"_id": user_id})
 
-def register_user(user_id: int, gender: str, name: str):
-    if not is_registered(user_id):
+def register_user(user_id, gender, name):
+    if not get_user_data(user_id):
+        username = generate_username()
         users.insert_one({
-            "user_id": user_id,
-            "gender": gender,
+            "_id": user_id,
             "name": name,
-            "username": None,
-            "search_requests": []
+            "gender": gender,
+            "username": username
         })
 
-def get_user_data(user_id: int):
-    return users.find_one({"user_id": user_id})
+def is_registered(user_id):
+    return get_user_data(user_id) is not None
 
-def update_username(user_id: int, username: str):
-    users.update_one({"user_id": user_id}, {"$set": {"username": username}})
-    usernames.insert_one({"username": username, "user_id": user_id})
+def generate_username():
+    return "user" + ''.join(random.choices(string.ascii_lowercase + string.digits, k=5))
 
-def get_user_by_username(username: str):
-    return usernames.find_one({"username": username})
+def assign_username(user_id):
+    username = generate_username()
+    users.update_one({"_id": user_id}, {"$set": {"username": username}})
+    return username
 
-def generate_random_username(length=6):
-    return ''.join(random.choices(string.ascii_lowercase + string.digits, k=length))
+def get_user_by_username(username):
+    return users.find_one({"username": username})
 
-def add_search_request(target_user_id: int, from_user_id: int):
-    users.update_one({"user_id": target_user_id}, {"$push": {"search_requests": from_user_id}})
+# Active Chat Functions
+def save_active_chat(user_id, partner_id):
+    active_chats.update_one(
+        {"_id": user_id},
+        {"$set": {"partner_id": partner_id}},
+        upsert=True
+    )
 
-def get_search_requests(user_id: int):
-    user = get_user_data(user_id)
-    return user.get("search_requests", []) if user else []
+def get_active_partner(user_id):
+    data = active_chats.find_one({"_id": user_id})
+    return data["partner_id"] if data else None
 
-def clear_search_requests(user_id: int):
-    users.update_one({"user_id": user_id}, {"$set": {"search_requests": []}})
+def delete_active_chat(user_id):
+    active_chats.delete_one({"_id": user_id})
+
+def is_user_busy(user_id):
+    return get_active_partner(user_id) is not None
