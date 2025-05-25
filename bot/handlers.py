@@ -10,11 +10,11 @@ from telegram.ext import (
     ContextTypes,
     ConversationHandler
 )
-
 from bot.matchmaking import (
-    start_chat, stop_chat, forward_message, inline_callback_handler
+    start_chat, stop_chat, forward_message,
+    inline_callback_handler, search_user, join_user
 )
-from bot.utils import is_registered, register_user
+from bot.utils import is_registered, register_user, get_user_data
 
 # States for registration
 GENDER, NAME = range(2)
@@ -55,9 +55,11 @@ async def name_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     name = update.message.text
     gender = context.user_data["gender"]
-    register_user(user_id, gender, name)
-    await update.message.reply_text(f"✅ Registered successfully as *{name}*! Starting chat...", parse_mode="Markdown")
-    await start_chat(user_id, update, context)
+    username = register_user(user_id, gender, name)
+    await update.message.reply_text(
+        f"✅ Registered successfully as *{name}*!\nYour anonymous username is: `{username}`\nUse /chat to begin.",
+        parse_mode="Markdown"
+    )
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -85,6 +87,8 @@ def register_handlers(app):
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("end", end_command))
+    app.add_handler(CommandHandler("search", search_user))
+    app.add_handler(CommandHandler("join", join_user))
     app.add_handler(conv_handler)
     app.add_handler(CallbackQueryHandler(button_callback, pattern="^start_chat$"))  # Inline Start Chat button
     app.add_handler(CallbackQueryHandler(inline_callback_handler, pattern="^end_chat$"))  # Inline End Chat button
