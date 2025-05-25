@@ -1,81 +1,94 @@
-# bot/matchmaking.py
-
-from telegram import Update
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 from bot.utils import (
-    get_user_data,
-    get_user_by_username,
-    save_active_chat,
-    delete_active_chat,
-    get_active_partner,
-    is_user_busy
+    get_user_data, get_user_by_username, get_partner, save_active_chat,
+    end_chat, pending_requests, users
 )
 
 waiting_users = []
 
 async def start_chat(user_id, update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if is_user_busy(user_id):
-        await update.message.reply_text("You're already in a chat. Use /end to leave.")
-        return
+    if waiting_users and waiting_users[0] != user_id:
+        partner_id = waiting_users.pop(0)
+        save_active_chat(user_id, partner_id)
 
-    for partner_id in waiting_users:
-        if partner_id != user_id and not is_user_busy(partner_id):
-            user_data = get_user_data(user_id)
-            partner_data = get_user_data(partner_id)
+        user_data = get_user_data(user_id)
+        partner_data = get_user_data(partner_id)
 
-            if user_data and partner_data:
-                save_active_chat(user_id, partner_id)
-                save_active_chat(partner_id, user_id)
-                waiting_users.remove(partner_id)
-
-                await context.bot.send_message(
-                    chat_id=user_id,
-                    text=f"You're now connected to a *{partner_data['gender']}*.\nUsername: `{partner_data['username']}`",
-                    parse_mode="Markdown"
-                )
-                await context.bot.send_message(
-                    chat_id=partner_id,
-                    text=f"You're now connected to a *{user_data['gender']}*.\nUsername: `{user_data['username']}`",
-                    parse_mode="Markdown"
-                )
-                return
-
-    waiting_users.append(user_id)
-    await update.message.reply_text("Looking for someone to chat with...")
+        await context.bot.send_message(partner_id, f"Stranger ({user_data['gender']}) connected. Username: @{user_data['username']}")
+        await context.bot.send_message(user_id, f"Stranger ({partner_data['gender']}) connected. Username: @{partner_data['username']}")
+    else:
+        waiting_users.append(user_id)
+        await context.bot.send_message(user_id, "Waiting for a stranger to connect...")
 
 async def stop_chat(user_id, update: Update, context: ContextTypes.DEFAULT_TYPE):
-    partner_id = get_active_partner(user_id)
-    if partner_id:
-        delete_active_chat(user_id)
-        delete_active_chat(partner_id)
+    partner_id = get_partner(user_id)
+    end_chat(user_id)
 
-        await context.bot.send_message(chat_id=user_id, text="You left the chat.")
-        await context.bot.send_message(chat_id=partner_id, text="Your partner left the chat.")
-    else:
-        if user_id in waiting_users:
-            waiting_users.remove(user_id)
-        await update.message.reply_text("You are not currently in a chat.")
+    await context.bot.send_message(user_id, "Chat ended.")
+    if partner_id:
+        await context.bot.send_message(partner_id, "Stranger has left the chat.")
 
 async def forward_message(user_id, update: Update, context: ContextTypes.DEFAULT_TYPE):
-    partner_id = get_active_partner(user_id)
-    if not partner_id:
-        await update.message.reply_text("You're not in a chat. Use /chat to find someone.")
-        return
-
-    if update.message.text:
-        await context.bot.send_message(chat_id=partner_id, text=update.message.text)
-    elif update.message.voice:
-        await context.bot.send_voice(chat_id=partner_id, voice=update.message.voice.file_id)
-    elif update.message.sticker:
-        await context.bot.send_sticker(chat_id=partner_id, sticker=update.message.sticker.file_id)
-    elif update.message.video_note:
-        await context.bot.send_video_note(chat_id=partner_id, video_note=update.message.video_note.file_id)
+    partner_id = get_partner(user_id)
+    if partner_id:
+        if update.message.text:
+            await context.bot.send_message(partner_id, update.message.text)
+        elif update.message.voice:
+            await context.bot.send_voice(partner_id, update.message.voice.file_id)
+        elif update.message.sticker:
+            await context.bot.send_sticker(partner_id, update.message.sticker.file_id)
+        elif update.message.video_note:
+            await context.bot.send_video_note(partner_id, update.message.video_note.file_id)
 
 async def inline_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    user_id = query.from_user.id
     await query.answer()
+    await stop_chat(user_id, update, context)
 
-    if query.data == "end_chat":
-        user_id = query.from_user.id
-        await stop_chat(user_id, update, context)
-        await query.message.edit_text("Chat ended.")
+async def handle_search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    args = context.args
+    if not args:
+        await update.message.reply_text("Usage: /search <username>")
+        return
+
+    target = get_user_by_username(args[0])
+    if not target:
+        await update.message.reply_text("No user found with that username.")
+        return
+
+    pending_requests.insert_one({"from": user_id, "to": target["_id"]})
+    await update.message.reply_text(f"Join request sent to @{target['username']}")
+
+    await context.bot.send_message(
+        target["_id"],
+        f"You received a join request from @{get_user_data(user_id)['username']}\nUse /join {user_id} to accept."
+    )
+
+async def handle_join_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    args = context.args
+    if not args:
+        await update.message.reply_text("Usage: /join <id>")
+        return
+
+    try:
+        requester_id = int(args[0])
+    except ValueError:
+        await update.message.reply_text("Invalid ID.")
+        return
+
+    if not pending_requests.find_one({"from": requester_id, "to": user_id}):
+        await update.message.reply_text("No such join request found.")
+        return
+
+    pending_requests.delete_one({"from": requester_id, "to": user_id})
+    save_active_chat(user_id, requester_id)
+
+    requester_data = get_user_data(requester_id)
+    your_data = get_user_data(user_id)
+
+    await context.bot.send_message(requester_id, f"Connected to @{your_data['username']} ({your_data['gender']})")
+    await context.bot.send_message(user_id, f"Connected to @{requester_data['username']} ({requester_data['gender']})")
