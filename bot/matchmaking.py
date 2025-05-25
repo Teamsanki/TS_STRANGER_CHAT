@@ -2,7 +2,7 @@ from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
 from telegram.ext import ContextTypes
 from bot.utils import get_user_data
 import asyncio
-from main import is_shutting_down
+from bot.state import is_shutting_down
 
 waiting_users = []
 active_chats = {}
