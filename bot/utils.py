@@ -5,7 +5,7 @@ import os
 
 client = MongoClient(os.environ.get("MONGO_URI"))
 db = client.get_default_database()
-users = db.tsusers
+users = db.users
 
 def is_registered(user_id):
     return users.find_one({"_id": user_id}) is not None
