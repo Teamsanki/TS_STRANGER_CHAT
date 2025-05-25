@@ -2,6 +2,7 @@ from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
 from telegram.ext import ContextTypes
 from bot.utils import get_user_data
 import asyncio
+from main import is_shutting_down
 
 waiting_users = []
 active_chats = {}
@@ -50,15 +51,14 @@ async def start_chat(user_id, update: Update, context: ContextTypes.DEFAULT_TYPE
         await context.bot.send_message(chat_id=user_id, text=intro_for_user, parse_mode="Markdown", reply_markup=markup)
 
     else:
-        # Show animated "Waiting for stranger..."
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
-        await asyncio.sleep(1.5)
+        await asyncio.sleep(1)
         loading_msg = await update.message.reply_text("Waiting for a stranger...")
         waiting_users.append(user_id)
 
-        while user_id in waiting_users:
+        while user_id in waiting_users and not is_shutting_down:
             for stage in loading_stages:
-                if user_id not in waiting_users:
+                if user_id not in waiting_users or is_shutting_down:
                     break
                 try:
                     await loading_msg.edit_text(f"Waiting for a stranger...\n\n{stage}")
@@ -85,30 +85,20 @@ async def forward_message(user_id, update: Update, context: ContextTypes.DEFAULT
         return
 
     partner_id = active_chats[user_id]
-
     reply_markup = get_intro_markup()
     sender_label = "*Anonymous Stranger says:*"
 
     if update.message.text:
-        await context.bot.send_message(
-            chat_id=partner_id,
-            text=f"{sender_label}\n{update.message.text}",
-            parse_mode="Markdown",
-            reply_markup=reply_markup
-        )
-
+        await context.bot.send_message(chat_id=partner_id, text=f"{sender_label}\n{update.message.text}", parse_mode="Markdown", reply_markup=reply_markup)
     elif update.message.video_note:
         await context.bot.send_message(chat_id=partner_id, text=sender_label, parse_mode="Markdown", reply_markup=reply_markup)
         await context.bot.send_video_note(chat_id=partner_id, video_note=update.message.video_note.file_id)
-
     elif update.message.voice:
         await context.bot.send_message(chat_id=partner_id, text=sender_label, parse_mode="Markdown", reply_markup=reply_markup)
         await context.bot.send_voice(chat_id=partner_id, voice=update.message.voice.file_id)
-
     elif update.message.sticker:
         await context.bot.send_message(chat_id=partner_id, text=sender_label, parse_mode="Markdown", reply_markup=reply_markup)
         await context.bot.send_sticker(chat_id=partner_id, sticker=update.message.sticker.file_id)
-
     else:
         await update.message.reply_text("Unsupported message type.")
 
