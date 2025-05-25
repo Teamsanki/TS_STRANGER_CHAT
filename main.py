@@ -1,31 +1,23 @@
-import asyncio
 import os
-import signal
-from telegram.ext import Application
-from bot.handlers import setup_handlers
-from bot.state import is_shutting_down  # now imported from a neutral module
+from telegram.ext import ApplicationBuilder
+from bot.handlers import register_handlers  # No circular import
 
-def setup_signal_handlers(application: Application):
-    from bot.state import is_shutting_down
+from dotenv import load_dotenv
+load_dotenv()
 
-    def shutdown():
-        import bot.state
-        bot.state.is_shutting_down = True
-        asyncio.create_task(application.stop())
+# Telegram Bot Token from .env
+TOKEN = os.getenv("BOT_TOKEN")
 
-    loop = asyncio.get_event_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, shutdown)
+def main():
+    # Build the app with your token
+    app = ApplicationBuilder().token(TOKEN).build()
 
-async def main():
-    token = os.getenv("BOT_TOKEN")
-    application = Application.builder().token(token).build()
-    setup_handlers(application)
-    setup_signal_handlers(application)
-    await application.run_polling()
+    # Register all handlers (from bot/handlers.py)
+    register_handlers(app)
+
+    # Start polling
+    print("Bot is running...")
+    app.run_polling()
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        print("Bot stopped gracefully.")
+    main()
