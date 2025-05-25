@@ -39,8 +39,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def chat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if is_registered(user_id):
-        # Pass update and context as matchmaking.start_chat expects these
-        await start_chat(update, context)
+        await start_chat(user_id, update, context)
         return ConversationHandler.END
 
     reply_markup = ReplyKeyboardMarkup([["Male", "Female"]], one_time_keyboard=True, resize_keyboard=True)
@@ -58,7 +57,7 @@ async def name_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     gender = context.user_data["gender"]
     register_user(user_id, gender, name)
     await update.message.reply_text(f"✅ Registered successfully as *{name}*! Starting chat...", parse_mode="Markdown")
-    await start_chat(update, context)
+    await start_chat(user_id, update, context)
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -66,12 +65,15 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 async def end_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await stop_chat(update, context)
+    user_id = update.effective_user.id
+    await stop_chat(user_id, update, context)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await forward_message(update, context)
+    user_id = update.effective_user.id
+    await forward_message(user_id, update, context)
 
 def register_handlers(app):
+    # Registration conversation
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("chat", chat_command)],
         states={
@@ -84,6 +86,6 @@ def register_handlers(app):
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("end", end_command))
     app.add_handler(conv_handler)
-    app.add_handler(CallbackQueryHandler(button_callback, pattern="^start_chat$"))
-    app.add_handler(CallbackQueryHandler(inline_callback_handler, pattern="^end_chat$"))
+    app.add_handler(CallbackQueryHandler(button_callback, pattern="^start_chat$"))  # Inline Start Chat button
+    app.add_handler(CallbackQueryHandler(inline_callback_handler, pattern="^end_chat$"))  # Inline End Chat button
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_message))
