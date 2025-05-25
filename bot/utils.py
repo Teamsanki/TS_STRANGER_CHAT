@@ -1,23 +1,29 @@
+import random
+import string
 from pymongo import MongoClient
 import os
 
-# Connect to MongoDB using the MONGO_URI environment variable
-client = MongoClient(os.getenv("MONGO_URI"))
-db = client["telemingle"]
-users = db["users"]
+client = MongoClient(os.environ.get("MONGO_URI"))
+db = client.get_default_database()
+users = db.tsusers
 
 def is_registered(user_id):
-    """Check if a user is already registered."""
-    return users.find_one({"user_id": user_id}) is not None
+    return users.find_one({"_id": user_id}) is not None
 
 def register_user(user_id, gender, name):
-    """Register a new user."""
-    users.insert_one({
-        "user_id": user_id,
-        "gender": gender,
-        "name": name
-    })
+    username = generate_username()
+    users.update_one(
+        {"_id": user_id},
+        {"$set": {"gender": gender, "name": name, "username": username}},
+        upsert=True
+    )
+    return username
 
 def get_user_data(user_id):
-    """Get a registered user's data (name and gender)."""
-    return users.find_one({"user_id": user_id}) or {}
+    return users.find_one({"_id": user_id})
+
+def get_user_by_username(username):
+    return users.find_one({"username": username})
+
+def generate_username():
+    return "user" + ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
